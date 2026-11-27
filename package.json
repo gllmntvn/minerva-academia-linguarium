@@ -1,0 +1,30 @@
+{
+  "name": "minerva-academia-linguarium",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource/bodoni-moda": "^5.2.0",
+    "@fontsource/eb-garamond": "^5.2.0",
+    "@fontsource/inter": "^5.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
