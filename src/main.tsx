@@ -1,10 +1,22 @@
-import { StrictMode, useEffect, useRef, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HashRouter, Link, NavLink, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { HashRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { languages, levels, qecr } from './catalog'
-import type { Example, Language } from './catalog'
-import { grades, isDue, scheduleReview } from './review'
+import type { Session } from '@supabase/supabase-js'
+import type { Language } from './catalog'
+import { Account, useAccount } from './account'
+import { useActivity } from './activity'
+import { useDecks } from './decks'
+import type { DeckStore } from './decks'
+import { History } from './history'
+import { PracticeSession, ReviewCard } from './practice'
+import type { FinishedAnswer, StudySet } from './practice'
+import { isDue, scheduleReview } from './review'
+import { DeckPage, Scriptorium } from './scriptorium'
+import { latestReviews, modeNames, nextInterval, reviewKey } from './study'
+import type { Activity, Mode, ReviewMode } from './study'
+import { academyCards, frenchTracks, writingCards } from './tracks'
 import '@fontsource/bodoni-moda/latin-600.css'
 import '@fontsource/eb-garamond/latin-400.css'
 import '@fontsource/eb-garamond/latin-400-italic.css'
@@ -14,8 +26,12 @@ import './style.css'
 
 const asset = (name: string) => `${import.meta.env.BASE_URL}art/${name}.svg`
 const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-type Study = Record<string, number>
-type Rating = (id: string, days: number) => void
+type Reviews = ReturnType<typeof latestReviews>
+type PracticeHandlers = {
+  reviews: Reviews
+  onAnswer: (set: StudySet, answer: FinishedAnswer) => void
+  onFinish: (set: StudySet, count: number, correct: number) => void
+}
 
 function PageTitle({ label, title, children }: { label?: string; title: string; children?: ReactNode }) {
   return <div className="page-title">
@@ -26,14 +42,37 @@ function PageTitle({ label, title, children }: { label?: string; title: string; 
 }
 
 function Shell() {
+  const { session, ready } = useAccount()
+  return ready
+    ? <LearningApp key={session?.user.id ?? 'guest'} session={session} />
+    : <main className="wrap"><p role="status">Carregando a Minerva…</p></main>
+}
+
+function LearningApp({ session }: { session: Session | null }) {
   const { pathname } = useLocation()
   const [preferred, setPreferred] = useState<Language['id']>('en')
-  const [study, setStudy] = useState<Study>({})
-  const [answers, setAnswers] = useState(0)
-  const rate: Rating = (id, days) => {
-    const dueAt = scheduleReview(days, Date.now())
-    setStudy(current => ({ ...current, [id]: dueAt }))
-    setAnswers(current => current + 1)
+  const activity = useActivity(session?.user.id)
+  const store = useDecks(session?.user.id ?? 'guest')
+  const reviews = latestReviews(activity.events)
+
+  const practice: PracticeHandlers = {
+    reviews,
+    onAnswer(set, answer) {
+      const previous = reviews[reviewKey(set.mode, answer.card.id)]
+      const record: Omit<Activity, 'id' | 'at'> = {
+        title: set.title, language: set.language, mode: set.mode,
+        kind: 'answer', cardId: answer.card.id, correct: answer.correct,
+      }
+      if (answer.grade !== undefined) {
+        record.grade = answer.grade
+        record.interval = nextInterval(answer.grade, previous?.interval)
+        record.dueAt = scheduleReview(record.interval, Date.now())
+      }
+      activity.add(record)
+    },
+    onFinish(set, count, correctCount) {
+      activity.add({ title: set.title, language: set.language, mode: set.mode, kind: 'session', count, correctCount })
+    },
   }
 
   useEffect(() => {
@@ -42,10 +81,13 @@ function Shell() {
   }, [pathname])
 
   return <>
+    {pathname !== '/conta' && new URLSearchParams(location.search).has('redefinir') && <Navigate to="/conta" replace />}
     <button type="button" className="skip" onClick={() => document.getElementById('conteudo')?.focus()}>
       Pular para o conteúdo
     </button>
-    <div className="preview">Demonstração 0.1 · Sem conta · Sua atividade é apagada ao recarregar</div>
+    <div className="preview">{session
+      ? 'Histórico da conta · Decks salvos neste navegador'
+      : 'Estudo sem conta · Histórico e decks salvos neste navegador'}</div>
     <header className="top">
       <Link className="brand" to="/" aria-label="Minerva — início">
         <img width="56" height="56" src={asset('emblema')} alt="" />
@@ -53,21 +95,35 @@ function Shell() {
       </Link>
       <nav aria-label="Navegação principal">
         <NavLink to="/academia">Academia</NavLink>
+        <NavLink to="/laboratorio">Laboratório</NavLink>
         <NavLink to="/estudio">Meu estúdio</NavLink>
         <NavLink to="/memoria">Memoria</NavLink>
-        <NavLink to="/bibliotheca">Bibliotheca</NavLink>
+        <NavLink to="/scriptorium">Meus decks</NavLink>
+        <NavLink to="/conta">Conta</NavLink>
       </nav>
     </header>
     <main id="conteudo" className="wrap" tabIndex={-1}>
+      {activity.issue && <div className="status-note" role="status">
+        <p>{activity.issue}</p>
+        {activity.pendingCount > 0 && <button type="button" className="button secondary" onClick={() => void activity.sync()}>Tentar sincronizar</button>}
+      </div>}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/academia" element={<Academy />} />
         <Route path="/academia/:id" element={<LanguagePage />} />
         <Route path="/academia/:id/a1" element={<Lesson />} />
-        <Route path="/academia/:id/a1/flashcards" element={<Practice mode="flashcards" rate={rate} />} />
-        <Route path="/academia/:id/a1/leitura" element={<Practice mode="leitura" rate={rate} />} />
-        <Route path="/estudio" element={<Studio language={preferred} changeLanguage={setPreferred} study={study} answers={answers} />} />
-        <Route path="/memoria" element={<Memory study={study} rate={rate} />} />
+        <Route path="/academia/:id/a1/flashcards" element={<Practice mode="flashcards" {...practice} />} />
+        <Route path="/academia/:id/a1/leitura" element={<Practice mode="leitura" {...practice} />} />
+        <Route path="/laboratorio" element={<Laboratory />} />
+        <Route path="/laboratorio/:id/escrita" element={<Practice mode="escrita" {...practice} />} />
+        <Route path="/laboratorio/fr/trilhas/:track" element={<TrackPractice {...practice} />} />
+        <Route path="/estudio" element={<Studio language={preferred} changeLanguage={setPreferred} />} />
+        <Route path="/memoria" element={<Memory {...practice} decks={store.decks ?? []} />} />
+        <Route path="/scriptorium" element={<Scriptorium store={store} />} />
+        <Route path="/scriptorium/:id" element={<DeckPage store={store} />} />
+        <Route path="/scriptorium/:id/:mode" element={<DeckPractice store={store} {...practice} />} />
+        <Route path="/historico" element={<History events={activity.events} synced={Boolean(session)} decks={store.decks ?? []} />} />
+        <Route path="/conta" element={<Account session={session} pendingHistory={activity.pendingCount > 0} />} />
         <Route path="/bibliotheca" element={<Library />} />
         <Route path="/metodologia" element={<Method />} />
         <Route path="/privacidade" element={<Privacy />} />
@@ -75,7 +131,8 @@ function Shell() {
       </Routes>
     </main>
     <footer className="footer">
-      <span>Minerva · <i lang="en">The art of language</i></span>
+      <span>Minerva — Academia Linguarium</span>
+      <Link to="/bibliotheca">Bibliotheca</Link>
       <Link to="/metodologia">Metodologia</Link>
       <Link to="/privacidade">Privacidade</Link>
     </footer>
@@ -99,15 +156,16 @@ function Home() {
   return <>
     <section className="hero">
       <div>
-        <p className="eyebrow">Academia Linguarium · <span lang="en">The art of language</span></p>
+        <p className="eyebrow">Academia Linguarium</p>
         <h1>Uma língua.<br />Um novo mundo.</h1>
         <p className="lead">Descubra outras culturas e cultive o conhecimento no seu próprio ritmo.</p>
         <div className="actions">
-          <Link className="button" to="/estudio">Experimentar a demonstração →</Link>
+          <Link className="button" to="/estudio">Começar a estudar →</Link>
           <Link className="button secondary" to="/metodologia">Conhecer o método</Link>
         </div>
       </div>
-      <img className="hero-art" src={asset('minerva')} width="460" height="430" alt="" />
+      <img className="hero-art" src={`${import.meta.env.BASE_URL}art/minerva-estatua.webp`} width="640" height="800"
+        alt="Estátua de corpo inteiro da Minerva, com elmo, lança e escudo." />
     </section>
     <section className="section">
       <h2>Escolha seu idioma</h2>
@@ -120,7 +178,7 @@ function Home() {
 function Academy() {
   return <>
     <PageTitle label="Academia" title="Cinco línguas, novos horizontes.">
-      O percurso é organizado do A1 ao C2 pelo QECR. Nesta demonstração, você pode abrir uma amostra A1 em cada idioma.
+      O percurso é organizado do A1 ao C2 pelo QECR. Comece com uma amostra A1 por idioma e explore as trilhas de francês no Laboratório.
     </PageTitle>
     <LanguageCards />
   </>
@@ -140,6 +198,7 @@ function LanguagePage() {
           : <p className="muted">Conteúdo previsto</p>}
       </article>)}
     </div>
+    {language.id === 'fr' && <section className="section"><h2>Trilhas de francês</h2><FrenchTracks /></section>}
     <Link className="return" to="/academia">← Todos os idiomas</Link>
   </>
 }
@@ -162,88 +221,75 @@ function Lesson() {
     <div className="actions">
       <Link className="button" to="flashcards">Praticar com flashcards →</Link>
       <Link className="button secondary" to="leitura">Praticar leitura</Link>
+      <Link className="button secondary" to={`/laboratorio/${language.id}/escrita`}>Deck de escrita</Link>
       <Link to={`/academia/${id}`}>Voltar ao idioma</Link>
     </div>
   </>
 }
 
-function Practice({ mode, rate }: { mode: 'flashcards' | 'leitura'; rate: Rating }) {
+function Practice({ mode, ...handlers }: { mode: Mode } & PracticeHandlers) {
   const { id } = useParams()
   const language = languages.find(item => item.id === id)
   if (!language) return <Missing />
-  return <Exercise key={`${id}-${mode}`} language={language} mode={mode} rate={rate} />
+  const base = `/academia/${language.id}/a1`
+  return <PracticeSession key={`${id}-${mode}`} title={mode === 'escrita' ? 'Deck de escrita' : language.lessonTitle}
+    mode={mode} language={language.id} languageName={language.portuguese}
+    cards={mode === 'escrita' ? writingCards(language.id) : academyCards(language.id)} back={base} {...handlers} />
 }
 
-function Exercise({ language, mode, rate }: { language: Language; mode: 'flashcards' | 'leitura'; rate: Rating }) {
-  const [index, setIndex] = useState(0)
-  const [chosen, setChosen] = useState<string | null>(null)
-  const step = useRef<HTMLParagraphElement>(null)
-  const completion = useRef<HTMLHeadingElement>(null)
-  const example = language.examples[index]
-  const back = `/academia/${language.id}/a1`
-  const title = mode === 'flashcards' ? 'Flashcards' : 'Leitura'
+function TrackPractice(handlers: PracticeHandlers) {
+  const { track } = useParams()
+  const match = frenchTracks.find(item => item.id === track)
+  if (!match) return <Missing />
+  return <PracticeSession key={match.id} title={match.title} mode="flashcards" language="fr" languageName="Francês"
+    cards={match.cards} back="/laboratorio" {...handlers} />
+}
 
-  useEffect(() => {
-    if (index > 0) (step.current ?? completion.current)?.focus()
-  }, [index])
+function DeckPractice({ store, ...handlers }: { store: DeckStore } & PracticeHandlers) {
+  const { id, mode } = useParams()
+  const deck = store.decks?.find(item => item.id === id)
+  const language = languages.find(item => item.id === deck?.language)
+  if (!store.decks && !store.issue) return <p>Carregando deck…</p>
+  if (!deck || !language || (mode !== 'flashcards' && mode !== 'escrita')) return <Missing />
+  return <PracticeSession key={`${id}-${mode}`} title={deck.title} mode={mode} language={deck.language} languageName={language.portuguese}
+    cards={deck.cards} back={`/scriptorium/${id}`} {...handlers} />
+}
 
-  function advance() {
-    setIndex(i => i + 1)
-    setChosen(null)
-  }
+function FrenchTracks() {
+  return <div className="level-grid">
+    {frenchTracks.map(track => <article className="panel card-body" key={track.id}>
+      <h3>{track.title.split(' · ')[1]}</h3>
+      <p>{track.description} {track.cards.length} cartas.</p>
+      <Link className="button secondary" to={`/laboratorio/fr/trilhas/${track.id}`}>Estudar trilha</Link>
+    </article>)}
+  </div>
+}
 
+function Laboratory() {
+  const [id, setId] = useState<Language['id']>('fr')
   return <>
-    <PageTitle label={`Laboratório · ${language.portuguese} · A1`} title={title} />
-    {!example ? <div className="panel card-body activity" role="status">
-      <h2 ref={completion} tabIndex={-1}>Prática concluída</h2>
-      <p>Você passou pelos três exemplos da lição.</p>
-      <Link className="button" to={mode === 'flashcards' ? '/memoria' : back}>
-        {mode === 'flashcards' ? 'Ver revisões' : 'Voltar à lição'}
-      </Link>
-    </div> : <>
-      <p className="muted" ref={step} tabIndex={-1}>Exemplo {index + 1} de {language.examples.length}</p>
-      {mode === 'flashcards'
-        ? <Flashcard key={example.id} example={example} language={language} onRate={days => { rate(example.id, days); advance() }} />
-        : <div className="panel card-body activity">
-          <h2 lang={language.id}>{example.phrase}</h2>
-          <p>Qual é o sentido da expressão?</p>
-          <div className="actions">
-            {[...language.examples].reverse().map(option => <button type="button" className="button secondary" key={option.id} aria-pressed={chosen === option.id} onClick={() => setChosen(option.id)}>
-              {option.meaning}
-            </button>)}
-          </div>
-          {chosen && <p role="status">{chosen === example.id ? 'Correto.' : `A tradução é “${example.meaning}”`}</p>}
-          {chosen && <button type="button" className="button" onClick={advance}>Continuar →</button>}
-        </div>}
-      <Link className="return" to={back}>← Voltar à lição</Link>
-    </>}
+    <PageTitle label="Laboratório" title="Prática de idiomas">
+      Escolha o idioma e como quer praticar.
+    </PageTitle>
+    <div className="panel card-body activity">
+      <label htmlFor="practice-language">Idioma</label>
+      <select id="practice-language" value={id} onChange={event => {
+        const selected = languages.find(language => language.id === event.target.value)
+        if (selected) setId(selected.id)
+      }}>
+        {languages.map(item => <option value={item.id} key={item.id}>{item.portuguese}</option>)}
+      </select>
+      <div className="actions">
+        <Link className="button" to={`/laboratorio/${id}/escrita`}>Deck de escrita</Link>
+        <Link className="button secondary" to={`/academia/${id}/a1/flashcards`}>Flashcards com áudio</Link>
+        <Link className="button secondary" to={`/academia/${id}/a1/leitura`}>Leitura</Link>
+      </div>
+    </div>
+    <section className="section"><h2>Trilhas de francês</h2><FrenchTracks /></section>
   </>
 }
 
-function Flashcard({ example, language, onRate }: { example: Example; language: Language; onRate: (days: number) => void }) {
-  const [revealed, setRevealed] = useState(false)
-  const answer = useRef<HTMLParagraphElement>(null)
-  useEffect(() => {
-    if (revealed) answer.current?.focus()
-  }, [revealed])
-  return <article className="panel card-body activity">
-    <h2 lang={language.id}>{example.phrase}</h2>
-    {revealed ? <>
-      <p className="lead" ref={answer} tabIndex={-1}>{example.meaning}</p>
-      <p>Como foi lembrar?</p>
-      <div className="actions">
-        {grades.map(grade => <button key={grade.days} type="button" className="button secondary" onClick={() => onRate(grade.days)}>
-          {grade.label} · {grade.days ? `${grade.days} d` : 'agora'}
-        </button>)}
-      </div>
-    </> : <button type="button" className="button" onClick={() => setRevealed(true)}>Ver resposta</button>}
-  </article>
-}
-
-function Studio({ language, changeLanguage, study, answers }: {
-  language: Language['id']; changeLanguage: (id: Language['id']) => void; study: Study; answers: number
-}) {
-  const due = Object.values(study).filter(value => isDue(value, Date.now())).length
+function Studio({ language, changeLanguage }: { language: Language['id']; changeLanguage: (id: Language['id']) => void }) {
   return <>
     <PageTitle label="Meu estúdio" title="Seu espaço de aprendizagem.">
       Escolha o idioma da sua próxima atividade.
@@ -261,53 +307,77 @@ function Studio({ language, changeLanguage, study, answers }: {
         <Link className="button" to={`/academia/${language}/a1`}>Abrir lição A1 →</Link>
       </section>
       <section className="panel card-body">
-        <h2>Memoria</h2>
-        <p>{due} {due === 1 ? 'carta disponível' : 'cartas disponíveis'} nesta visita.</p>
-        <p>{answers} {answers === 1 ? 'avaliação de flashcard' : 'avaliações de flashcards'} nesta visita.</p>
-        <Link className="button secondary" to="/memoria">Ver agenda de revisões</Link>
+        <h2>Minha atividade</h2>
+        <div className="form-stack">
+          <Link to="/historico">Histórico de estudo e estatísticas</Link>
+          <Link to="/memoria">Agenda de revisões</Link>
+          <Link to="/scriptorium">Meus decks</Link>
+        </div>
       </section>
     </div>
   </>
 }
 
-function Memory({ study, rate }: { study: Study; rate: Rating }) {
+function Memory({ reviews, decks, onAnswer }: Pick<PracticeHandlers, 'reviews' | 'onAnswer'> & { decks: NonNullable<DeckStore['decks']> }) {
   const [now, setNow] = useState(Date.now)
+  const [filter, setFilter] = useState('all')
   const [feedback, setFeedback] = useState('')
-  const available = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
-  const entries = languages.flatMap(language => language.examples.filter(example => Object.hasOwn(study, example.id))
-    .map(example => ({ example, language, dueAt: study[example.id] })))
-    .sort((a, b) => a.dueAt - b.dueAt)
+  const sets = [
+    ...languages.map(language => ({ language, cards: writingCards(language.id), title: language.lessonTitle, back: '/academia' })),
+    ...decks.flatMap(deck => {
+      const language = languages.find(item => item.id === deck.language)
+      return language ? [{ language, cards: deck.cards, title: deck.title, back: `/scriptorium/${deck.id}` }] : []
+    }),
+  ]
+  const entries = sets.flatMap(({ language, cards, title, back }) => cards.flatMap(card =>
+    (['flashcards', 'escrita'] as const).flatMap(mode => {
+      const review = reviews[reviewKey(mode, card.id)]
+      if (review?.dueAt === undefined || (filter !== 'all' && filter !== language.id)) return []
+      const set: StudySet = { title, language: language.id, languageName: language.portuguese, cards, mode, back }
+      return [{ id: review.id, card, mode, set, dueAt: review.dueAt }]
+    }),
+  )).sort((a, b) => a.dueAt - b.dueAt)
   const due = entries.filter(entry => isDue(entry.dueAt, now))
   const upcoming = entries.filter(entry => !isDue(entry.dueAt, now))
 
+  function rate(set: StudySet, mode: ReviewMode, answer: FinishedAnswer) {
+    const previous = reviews[reviewKey(mode, answer.card.id)]?.interval
+    const days = answer.grade !== undefined ? nextInterval(answer.grade, previous) : 0
+    onAnswer(set, answer)
+    setNow(Date.now())
+    setFeedback(days ? `Próxima revisão em ${days} ${days === 1 ? 'dia' : 'dias'}.` : 'A carta continua disponível para revisar.')
+  }
+
   return <>
     <PageTitle label="Memoria" title="Revisões espaçadas.">
-      Avalie um flashcard para agendar a próxima revisão. A agenda funciona durante esta visita.
+      A fila reúne cartas de flashcards e escrita conforme o horário agendado.
     </PageTitle>
+    <label htmlFor="review-language">Filtrar por idioma</label>
+    <select id="review-language" value={filter} onChange={event => setFilter(event.target.value)}>
+      <option value="all">Todos os idiomas</option>
+      {languages.map(item => <option value={item.id} key={item.id}>{item.portuguese}</option>)}
+    </select>
     <p role="status">{feedback}</p>
     <section className="section">
-      <h2 ref={available} tabIndex={-1}>Disponíveis agora ({due.length})</h2>
-      {due.length === 0 && <p>Nenhuma carta disponível. <Link to="/academia">Pratique com flashcards na Academia.</Link></p>}
+      <h2>Disponíveis agora ({due.length})</h2>
+      {due.length === 0 && <p>Nenhuma carta disponível. <Link to="/laboratorio">Abrir Laboratório</Link></p>}
       <div className="stack">
-        {due.map(({ example, language, dueAt }) => <Flashcard key={`${example.id}-${dueAt}`} example={example} language={language} onRate={days => {
-          rate(example.id, days)
-          setNow(Date.now())
-          const period = days === 1 ? '1 dia' : `${days} dias`
-          setFeedback(days ? `Revisão reagendada para daqui a ${period}.` : 'A carta continua disponível para revisar.')
-          available.current?.focus()
-        }} />)}
+        {due.map(({ id, card, mode, set }) => <div key={id}>
+          <p>{set.languageName} · {modeNames[mode]}</p>
+          <ReviewCard card={card} language={set.language} mode={mode} done={answer => rate(set, mode, answer)} />
+        </div>)}
       </div>
     </section>
     <section className="section">
       <h2>Próximas revisões</h2>
       {upcoming.length
-        ? <ul className="examples">{upcoming.map(({ example, language, dueAt }) => <li className="panel card-body" key={example.id}>
-          <strong lang={language.id}>{example.phrase}</strong>
-          <p><time dateTime={new Date(dueAt).toISOString()}>{dateTime.format(dueAt)}</time></p>
+        ? <ul className="examples">{upcoming.map(({ id, card, mode, set, dueAt }) => <li className="panel card-body" key={id}>
+          <strong lang={set.language}>{card.phrase || 'Carta com mídia'}</strong>
+          <p>{set.languageName} · {modeNames[mode]} · <time dateTime={new Date(dueAt).toISOString()}>{dateTime.format(dueAt)}</time></p>
         </li>)}</ul>
         : <p>Nenhuma revisão agendada.</p>}
     </section>
@@ -334,9 +404,11 @@ function Method() {
     </PageTitle>
     <div className="panel card-body prose">
       <h2>O que você pode experimentar</h2>
-      <p>A versão 0.1 inclui uma lição A1 por idioma, leitura, flashcards e uma fila de revisão que funciona durante a visita. Os exemplos foram escritos para a Minerva.</p>
+      <p>A Minerva já oferece uma lição A1 por idioma, trilhas de francês, leitura, flashcards com voz sintética, decks de escrita e prática por repetição espaçada. As frases de estudo foram escritas para a Minerva.</p>
       <h2>O que está previsto</h2>
-      <p>Cursos completos do A1 ao C2, trilhas temáticas, demais práticas, login e cadastro por e-mail e senha, onboarding personalizado, sincronização, Scriptorium com mídias, Bibliotheca ampliada, metas, histórico, perfil, configurações e curadoria.</p>
+      <p>Cursos completos do A1 ao C2, trilhas temáticas nos demais idiomas, exercícios de gramática e escuta, onboarding, Bibliotheca ampliada, metas, perfil, configurações e curadoria.</p>
+      <h2>Como estudar</h2>
+      <p>Escolha uma trilha e defina quantas cartas quer ver. Nos flashcards, use Espaço com a carta em foco para revelar e 1 a 4 para avaliar. No deck de escrita, pressione Enter para conferir a resposta. No fim da sessão, você pode repetir as cartas que errou.</p>
       <Link to="/bibliotheca">Consultar as referências pedagógicas →</Link>
     </div>
   </>
@@ -346,7 +418,8 @@ function Privacy() {
   return <>
     <PageTitle label="Minerva" title="Privacidade" />
     <div className="panel card-body prose">
-      <p>A demonstração funciona sem cadastro, campos pessoais, upload ou rastreamento do aplicativo. Escolhas, respostas e agendamentos ficam na memória da página e são descartados ao recarregar.</p>
+      <p>Sem conta, seu histórico e seus decks ficam no navegador e dispositivo atuais. Limpar os dados do site remove os registros e arquivos locais. Os arquivos anexados às cartas não são enviados à internet.</p>
+      <p>Quando conectado a uma conta, seu histórico é sincronizado com o Supabase. Os decks com mídia continuam locais. O aplicativo não usa rastreamento de navegação.</p>
       <p>Os links da Bibliotheca levam aos sites das instituições. Ao abrir um link, aplicam-se as práticas de privacidade do site de destino.</p>
     </div>
   </>

@@ -1,6 +1,6 @@
 {
   "name": "minerva-academia-linguarium",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "@fontsource/bodoni-moda": "^5.2.0",
     "@fontsource/eb-garamond": "^5.2.0",
     "@fontsource/inter": "^5.2.0",
+    "@supabase/supabase-js": "^2.119.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.7"
