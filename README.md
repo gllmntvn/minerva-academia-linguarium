@@ -2,7 +2,7 @@
 
 *The art of language*
 
-Proposta de demonstração pública 0.1. O aplicativo usa React, TypeScript e Vite. A hospedagem prevista é GitHub Pages. A arquitetura de produto inclui Supabase para autenticação por e-mail e senha, banco de dados e armazenamento de mídias. Essa integração fica para a etapa com contas reais.
+Demonstração pública 0.1, feita com React, TypeScript e Vite. A arquitetura de produto inclui Supabase para autenticação por e-mail e senha, banco de dados e armazenamento de mídias. Essa integração fica para a etapa com contas reais. [Abrir demonstração no GitHub Pages](https://gllmntvn.github.io/minerva-academia-linguarium/)
 
 ## Experimentar no Cloud
 

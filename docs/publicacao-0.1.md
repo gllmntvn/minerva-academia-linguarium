@@ -40,7 +40,7 @@ Os exemplos e as explicações foram escritos para a Minerva. Os descritores do 
 
 A hipótese da 0.1 é que uma amostra A1 por idioma basta para avaliar navegação, identidade e o ciclo lição → prática → revisão. Um primeiro teste com visitantes pode verificar se eles encontram um idioma, praticam e localizam a data de retorno. A demonstração não instrumenta o comportamento de visitantes.
 
-O repositório de origem da Minerva é privado. A publicação da demonstração depende de o plano da conta permitir GitHub Pages a partir de repositórios privados. Verificar o endereço final do Pages após o deploy. As políticas de acesso do Supabase serão verificadas quando existir um ambiente autorizado para a etapa com contas reais.
+O repositório de origem foi tornado público com aprovação para habilitar o GitHub Pages no plano da conta. As políticas de acesso do Supabase serão verificadas quando existir um ambiente autorizado para a etapa com contas reais. [Repositório público](https://github.com/gllmntvn/minerva-academia-linguarium)
 
 O link da ALMA Edizioni retornou redirecionamento inconclusivo no Cloud. Confirmar que ele abre no navegador antes de divulgar. Os demais links chegaram a uma resposta HTTP 200 a partir do ambiente Cloud.
 
@@ -50,9 +50,11 @@ O link da ALMA Edizioni retornou redirecionamento inconclusivo no Cloud. Confirm
 - Na compilação da 0.1, testei no Chromium larguras de 320, 390 e 1440 px, rotas sob o subdiretório esperado no Pages, os cinco idiomas, leitura, flashcards, voltar, recarregar, rota inválida e foco pelo teclado. A carta continuou futura após dois dias, voltou no terceiro e saiu da fila depois de ser avaliada novamente.
 - A auditoria npm retornou zero vulnerabilidades conhecidas no conjunto de dependências consultado. A compilação e os testes de agendamento passaram. Os percursos automatizados registraram zero erros no console, zero arquivos ausentes e zero requisições a terceiros enquanto a pessoa permanece na demonstração.
 
-## Publicação proposta
+## Publicação
 
-1. Confirmar o endereço e o acesso ao repositório privado. Inspecionar branch padrão, regras de proteção, conteúdo existente e disponibilidade de Pages no plano da conta.
+1. Confirmar o endereço e o acesso ao repositório. Inspecionar branch padrão, regras de proteção, conteúdo existente e disponibilidade de Pages no plano da conta.
 2. Incorporar a estrutura à branch de trabalho. Apresentar o diff e o escopo da versão. Após aprovação, enviar a branch e preparar a revisão da mudança para integração à branch padrão.
 3. Antes de acionar a publicação, confirmar a versão a publicar e obter aprovação para selecionar **GitHub Actions** em **Settings → Pages**, se necessário, e executar manualmente o fluxo que disponibilizará `dist/` ao público. A conta Supabase, dados reais e envios de e-mail ficam fora dessa publicação. [Configuração do GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
 4. Após a publicação autorizada, abrir a URL retornada pelo GitHub em uma sessão anônima. Conferir Home, rotas diretas, recarga, navegação em largura móvel, ativos, console, links pedagógicos e ausência de chamadas do aplicativo para terceiros. Registrar o SHA e a URL aprovados. Se for necessário retirar a demonstração ou restaurar um artefato anterior, apresentar a mudança para aprovação.
+
+A 0.1 foi publicada a partir do commit `95f00f2`. [Execução do GitHub Actions](https://github.com/gllmntvn/minerva-academia-linguarium/actions/runs/46067858435) · [Demonstração pública](https://gllmntvn.github.io/minerva-academia-linguarium/)
